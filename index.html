@@ -10,7 +10,7 @@ canvas { display:block; }
 #overlay {
   position:fixed; inset:0; background:#EDE8E0;
   pointer-events:none; z-index:10;
-  transition: opacity 2.8s ease-in-out;
+  transition: opacity 3s ease-in-out;
 }
 </style>
 </head>
@@ -23,172 +23,156 @@ const overlay = document.getElementById('overlay');
 const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.95;
+renderer.toneMappingExposure = 1.0;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xEDE8E0);
-scene.fog = new THREE.Fog(0xEDE8E0, 12, 22);
+scene.fog = new THREE.Fog(0xEDE8E0, 14, 24);
 
-const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, 0.01, 100);
-const START_POS = new THREE.Vector3(0.05, 0.02, 0.14);
-const END_POS   = new THREE.Vector3(0.8, 0.6, 6.5);
-camera.position.copy(START_POS);
+const camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 0.01, 100);
+camera.position.set(0.08, 0.04, 0.16);
 camera.lookAt(0, 0, 0);
 
-// Lights — soft, directional, like a gallery
-scene.add(new THREE.AmbientLight(0xfff8f0, 0.7));
-
-const key = new THREE.DirectionalLight(0xfff8f2, 1.8);
-key.position.set(3, 10, 5);
-key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
-key.shadow.camera.near = 1;
-key.shadow.camera.far = 30;
-key.shadow.camera.left = -8;
-key.shadow.camera.right = 8;
-key.shadow.camera.top = 8;
-key.shadow.camera.bottom = -8;
-key.shadow.bias = -0.002;
+// Soft gallery lighting — no hard shadows
+scene.add(new THREE.AmbientLight(0xfff8f2, 1.1));
+const key = new THREE.DirectionalLight(0xfffaf5, 1.4);
+key.position.set(4, 8, 5);
 scene.add(key);
-
-const fill = new THREE.DirectionalLight(0xe8eeff, 0.3);
-fill.position.set(-5, 3, -2);
+const fill = new THREE.DirectionalLight(0xe8eeff, 0.5);
+fill.position.set(-6, 2, -3);
 scene.add(fill);
+const rim = new THREE.DirectionalLight(0xfff0e8, 0.3);
+rim.position.set(0, -4, -6);
+scene.add(rim);
 
-// Ground — subtle shadow only
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(40, 40),
-  new THREE.ShadowMaterial({ opacity: 0.10 })
-);
-ground.rotation.x = -Math.PI / 2;
-ground.position.y = -2.2;
-ground.receiveShadow = true;
-scene.add(ground);
+// ── Organic form generators ───────────────────────────────
 
-// ── Three sculptures only ─────────────────────────────────
-
-// 1. Large: a flattened, wide organic form — like a thick stone slab
-function makeSlab() {
-  const geo = new THREE.SphereGeometry(1, 128, 128);
+function wobble(geo, amt) {
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-    // Flatten Z, stretch X slightly
-    pos.setX(i, x * 1.55);
-    pos.setY(i, y * 1.35);
-    pos.setZ(i, z * 0.38);
-    // Subtle organic wobble
-    const n = Math.sin(x*3.2)*Math.cos(y*2.8)*0.06;
-    pos.setZ(i, pos.getZ(i) + n);
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const n = (Math.sin(x*4.1+y*2.3)*Math.cos(y*3.7+z*2.1)*Math.sin(z*3.3+x*1.8)) * amt;
+    const len = Math.sqrt(x*x+y*y+z*z) || 1;
+    pos.setXYZ(i, x+n*x/len, y+n*y/len, z+n*z/len);
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
   return geo;
 }
 
-// 2. Medium: tall narrow twisted column
-function makeColumn() {
-  const geo = new THREE.CylinderGeometry(0.28, 0.38, 2.8, 80, 60);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const y = pos.getY(i);
-    const a = y * 0.55;
-    const x = pos.getX(i), z = pos.getZ(i);
-    pos.setX(i, x*Math.cos(a) - z*Math.sin(a));
-    pos.setZ(i, x*Math.sin(a) + z*Math.cos(a));
-    // Subtle bulge
-    const bulge = 1 + Math.sin((y/2.8 + 0.5) * Math.PI) * 0.12;
-    pos.setX(i, pos.getX(i) * bulge);
-    pos.setZ(i, pos.getZ(i) * bulge);
+function makePebble(rx, ry, rz) {
+  const g = new THREE.SphereGeometry(1, 128, 128);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    p.setXYZ(i, p.getX(i)*rx, p.getY(i)*ry, p.getZ(i)*rz);
   }
-  pos.needsUpdate = true;
-  geo.computeVertexNormals();
-  return geo;
+  p.needsUpdate = true;
+  return wobble(g, 0.055);
 }
 
-// 3. Small: a smooth rounded disc — like a river stone
-function makeDisc() {
-  const geo = new THREE.SphereGeometry(0.7, 128, 128);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    const z = pos.getZ(i);
-    pos.setX(i, x * 1.3);
-    pos.setY(i, y * 0.9);
-    pos.setZ(i, z * 0.5);
+function makeTallVase(h) {
+  const g = new THREE.CylinderGeometry(0.22, 0.32, h, 96, 64);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i);
+    const t = (y/h + 0.5);
+    // organic silhouette — narrow waist
+    const profile = 0.7 + Math.sin(t * Math.PI) * 0.5 + Math.sin(t*Math.PI*2)*0.08;
+    // twist
+    const a = y * 0.45;
+    const x = p.getX(i) * profile, z = p.getZ(i) * profile;
+    p.setX(i, x*Math.cos(a) - z*Math.sin(a));
+    p.setZ(i, x*Math.sin(a) + z*Math.cos(a));
   }
-  pos.needsUpdate = true;
-  geo.computeVertexNormals();
-  return geo;
+  p.needsUpdate = true;
+  g.computeVertexNormals();
+  return wobble(g, 0.03);
 }
 
+function makeWave() {
+  // A flattened torus — like a folded ribbon
+  const g = new THREE.TorusGeometry(0.9, 0.28, 64, 128);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    p.setY(i, p.getY(i) * 0.35 + Math.sin(p.getX(i)*2.2)*0.12);
+    p.setZ(i, p.getZ(i) * 0.55);
+  }
+  p.needsUpdate = true;
+  g.computeVertexNormals();
+  return wobble(g, 0.025);
+}
+
+function makeLens() {
+  // Wide flat lens shape
+  const g = new THREE.SphereGeometry(1, 128, 128);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    p.setXYZ(i, p.getX(i)*1.6, p.getY(i)*1.1, p.getZ(i)*0.28);
+  }
+  p.needsUpdate = true;
+  return wobble(g, 0.04);
+}
+
+function makeBoulder() {
+  const g = new THREE.SphereGeometry(1, 128, 128);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    p.setXYZ(i, p.getX(i)*1.1, p.getY(i)*0.88, p.getZ(i)*0.95);
+  }
+  p.needsUpdate = true;
+  return wobble(g, 0.08);
+}
+
+// ── Scene layout — 5 forms, generously spaced ─────────────
 const sculptures = [
-  {
-    geo: makeSlab(),
-    pos: [-1.1, 0.0, 0],
-    rot: [0.08, 0.18, 0.04],
-    scale: [1, 1, 1],
-    img: 'IMG_8332.jpeg',
-  },
-  {
-    geo: makeColumn(),
-    pos: [1.4, 0.0, -0.6],
-    rot: [0.05, -0.22, 0.03],
-    scale: [1, 1, 1],
-    img: 'IMG_8334.jpeg',
-  },
-  {
-    geo: makeDisc(),
-    pos: [0.2, -1.1, 0.8],
-    rot: [0.3, 0.5, 0.1],
-    scale: [1, 1, 1],
-    img: 'IMG_8330.jpeg',
-  },
+  { geo: makeLens(),         pos:[-1.6,  0.1,  0.2], rot:[0.06, 0.22, 0.04], img:'IMG_8332.jpeg' },
+  { geo: makeTallVase(2.9),  pos:[ 1.5,  0.0, -0.5], rot:[0.04,-0.18, 0.02], img:'IMG_8334.jpeg' },
+  { geo: makePebble(0.9,0.75,0.6), pos:[ 0.1,-0.9,  1.0], rot:[0.2,  0.4,  0.1],  img:'IMG_8330.jpeg' },
+  { geo: makeWave(),         pos:[ 0.4,  0.9, -1.2], rot:[0.3,  0.5,  0.15], img:'IMG_8333.jpeg' },
+  { geo: makeBoulder(),      pos:[-0.3, -0.5, -1.6], rot:[0.1, -0.3,  0.05], img:'IMG_8329.jpeg' },
 ];
 
 const loader = new THREE.TextureLoader();
 const meshes = [];
 
-sculptures.forEach((s, i) => {
+sculptures.forEach(s => {
   const mat = new THREE.MeshStandardMaterial({
-    roughness: 0.75,
+    roughness: 0.78,
     metalness: 0.0,
-    color: 0xd8d0c8,
+    color: 0xd0c8c0,
   });
-
   loader.load(s.img, tex => {
-    mat.map = tex;
-    mat.color.set(0xffffff);
-    mat.needsUpdate = true;
+    mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
   });
-
   const mesh = new THREE.Mesh(s.geo, mat);
   mesh.position.set(...s.pos);
   mesh.rotation.set(...s.rot);
-  mesh.scale.set(...s.scale);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
   mesh.userData.baseRot = [...s.rot];
-  mesh.userData.phase = i * 1.4;
+  mesh.userData.phase = meshes.length * 1.3;
   scene.add(mesh);
   meshes.push(mesh);
 });
 
-// ── Camera pull-back ──────────────────────────────────────
+// ── Camera path ───────────────────────────────────────────
+// Phase 1 (0–12s): pull back from inside texture, revealing the scene
+// Phase 2 (12s+): slow continuous orbit around the group
+
+const PULL = 12.0;
+const ORBIT_R = 6.8;
+const ORBIT_Y = 0.7;
+const ORBIT_SPEED = 0.018; // very slow
+
 function easeOutExpo(t) { return t===1?1:1-Math.pow(2,-10*t); }
-function easeInOutCubic(t) { return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2; }
 
-setTimeout(() => { overlay.style.opacity='0'; }, 300);
+// Start angle for orbit (matches where pull-back ends)
+const ORBIT_START = Math.PI * 0.15;
 
-let clock=0, lastTime=null;
-const PULL = 11.0; // slow, cinematic
+setTimeout(() => { overlay.style.opacity = '0'; }, 300);
+
+let clock = 0, lastTime = null;
 
 function animate(ts) {
   requestAnimationFrame(animate);
@@ -196,39 +180,44 @@ function animate(ts) {
   lastTime = ts;
   clock += dt;
 
-  const t  = Math.min(clock/PULL, 1);
-  const te = easeOutExpo(t);
-  const tc = easeInOutCubic(t);
+  if (clock < PULL) {
+    const t  = clock / PULL;
+    const te = easeOutExpo(t);
 
-  if (t < 1) {
-    camera.position.lerpVectors(START_POS, END_POS, te);
-    // gentle arc as it pulls back
-    camera.position.x += Math.sin(t * Math.PI) * 0.4 * (1-t);
-    camera.lookAt(new THREE.Vector3(
-      (1-tc)*0.02,
-      (1-tc)*0.01,
-      0
-    ));
-    camera.fov = 38 - (1-te) * 18;
-    camera.updateProjectionMatrix();
-  } else {
-    // Post reveal: very slow, barely perceptible drift
-    const ot = (clock-PULL) * 0.018;
-    camera.position.x = END_POS.x + Math.sin(ot) * 1.2;
-    camera.position.y = END_POS.y + Math.sin(ot*0.6) * 0.3;
-    camera.position.z = END_POS.z + Math.cos(ot*0.8) * 0.6;
+    // Pull back from 0.16 → orbit radius, while starting the orbit angle
+    const angle = ORBIT_START * t;
+    const r = 0.16 + (ORBIT_R - 0.16) * te;
+    const y = 0.04 + (ORBIT_Y - 0.04) * te;
+
+    camera.position.set(
+      Math.sin(angle) * r,
+      y,
+      Math.cos(angle) * r
+    );
     camera.lookAt(0, 0.1, 0);
-    camera.fov = 38;
+    camera.fov = 42 - (1-te) * 20;
+    camera.updateProjectionMatrix();
+
+  } else {
+    // Continuous orbit
+    const ot = ORBIT_START + (clock - PULL) * ORBIT_SPEED;
+    camera.position.set(
+      Math.sin(ot) * ORBIT_R,
+      ORBIT_Y + Math.sin((clock-PULL)*0.05) * 0.35,
+      Math.cos(ot) * ORBIT_R
+    );
+    camera.lookAt(0, 0.1, 0);
+    camera.fov = 42;
     camera.updateProjectionMatrix();
   }
 
-  // Barely-there breathing
+  // Very subtle breathing
   meshes.forEach(m => {
     const ph = m.userData.phase;
     const b  = m.userData.baseRot;
-    m.rotation.x = b[0] + Math.sin(clock*0.3+ph)*0.003;
-    m.rotation.y = b[1] + Math.sin(clock*0.22+ph*1.1)*0.004;
-    m.rotation.z = b[2] + Math.cos(clock*0.26+ph*0.8)*0.002;
+    m.rotation.x = b[0] + Math.sin(clock*0.28+ph)*0.003;
+    m.rotation.y = b[1] + Math.sin(clock*0.20+ph*1.1)*0.004;
+    m.rotation.z = b[2] + Math.cos(clock*0.24+ph*0.9)*0.002;
   });
 
   renderer.render(scene, camera);
