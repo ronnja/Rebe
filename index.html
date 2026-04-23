@@ -1,2 +1,181 @@
-html<!DOCTYPE html>
-<html><body><p>Rebe</p></body></html>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:#0d0b09; }
+canvas { display:block; }
+#overlay {
+  position:fixed; inset:0; background:#F0EBE3;
+  pointer-events:none; z-index:10;
+  transition: opacity 2.2s ease-in-out;
+}
+</style>
+</head>
+<body>
+<div id="overlay"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const overlay = document.getElementById('overlay');
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xeee8de);
+scene.fog = new THREE.FogExp2(0xeee8de, 0.032);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.01, 200);
+const START_POS = new THREE.Vector3(0.12, 0.08, 0.18);
+const END_POS   = new THREE.Vector3(0, 1.2, 7.5);
+camera.position.copy(START_POS);
+camera.lookAt(0, 0, 0);
+
+scene.add(new THREE.AmbientLight(0xfff5e8, 0.55));
+const key = new THREE.DirectionalLight(0xfff8f2, 2.6);
+key.position.set(5, 10, 4);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.near = 0.5;
+key.shadow.camera.far = 40;
+key.shadow.camera.left = -10; key.shadow.camera.right = 10;
+key.shadow.camera.top = 10; key.shadow.camera.bottom = -10;
+key.shadow.bias = -0.001;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xccd8ff, 0.4);
+fill.position.set(-6, 2, -3);
+scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffeedd, 0.3);
+rim.position.set(0, -5, -8);
+scene.add(rim);
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.ShadowMaterial({ opacity: 0.14 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -2.8;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const imageURLs = [
+  'IMG_8334.jpeg',
+  'IMG_8333.jpeg',
+  'IMG_8332.jpeg',
+  'IMG_8331.jpeg',
+  'IMG_8330.jpeg',
+  'IMG_8329.jpeg',
+  'IMG_8328.jpeg',
+];
+
+const formDefs = [
+  { geo: () => new THREE.CylinderGeometry(0.6,0.72,3.4,64,40), pos:[-2.6,0.3,0.4],  rot:[0.08,0.3,0.05],  scale:[1,1.7,0.24], twist:0.38 },
+  { geo: () => new THREE.SphereGeometry(1.15,64,64),            pos:[1.3,-0.2,-0.8], rot:[0.15,-0.4,0.08], scale:[1.3,1.1,0.9], twist:0    },
+  { geo: () => new THREE.CylinderGeometry(0.5,0.62,3.6,48,28), pos:[-0.2,0.8,1.5],  rot:[0.05,0.55,0.1],  scale:[0.9,1.9,0.2], twist:0.2  },
+  { geo: () => new THREE.TorusGeometry(1.0,0.52,48,96),         pos:[2.7,-0.1,0.3],  rot:[1.42,0.2,0.45],  scale:[1,1,0.38],    twist:0    },
+  { geo: () => new THREE.CylinderGeometry(0.5,0.55,3.6,48,24), pos:[0.8,0.5,-2.4],  rot:[0.08,-0.5,0.05], scale:[0.5,2.2,0.5], twist:0    },
+  { geo: () => new THREE.BoxGeometry(2.2,0.8,0.55,4,4,2),       pos:[-1.8,-1.0,-1.5],rot:[0.14,0.68,0.07], scale:[1,1,1],       twist:0    },
+  { geo: () => new THREE.SphereGeometry(0.8,48,48),             pos:[3.2,1.2,-1.8],  rot:[0,0,0],          scale:[0.9,1.4,0.7], twist:0    },
+];
+
+const loader = new THREE.TextureLoader();
+const meshes = [];
+
+formDefs.forEach((def, i) => {
+  const geo = def.geo();
+  if (def.twist > 0) {
+    const pos = geo.attributes.position;
+    for (let j = 0; j < pos.count; j++) {
+      const y = pos.getY(j);
+      const a = y * def.twist;
+      const x = pos.getX(j), z = pos.getZ(j);
+      pos.setX(j, x*Math.cos(a) - z*Math.sin(a));
+      pos.setZ(j, x*Math.sin(a) + z*Math.cos(a));
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  }
+
+  const mat = new THREE.MeshStandardMaterial({ roughness:0.70, metalness:0.03 });
+  loader.load(imageURLs[i % imageURLs.length], tex => {
+    mat.map = tex;
+    mat.needsUpdate = true;
+  });
+
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(...def.pos);
+  mesh.rotation.set(...def.rot);
+  mesh.scale.set(...def.scale);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.userData.baseRot = [...def.rot];
+  mesh.userData.phase = i * 1.13;
+  scene.add(mesh);
+  meshes.push(mesh);
+});
+
+function easeOutExpo(t) {
+  return t === 1 ? 1 : 1 - Math.pow(2, -10*t);
+}
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
+}
+
+setTimeout(() => { overlay.style.opacity = '0'; }, 400);
+
+let clock = 0, lastTime = null;
+const PULL = 9.0;
+
+function animate(ts) {
+  requestAnimationFrame(animate);
+  const dt = lastTime ? Math.min((ts - lastTime)/1000, 0.05) : 0;
+  lastTime = ts;
+  clock += dt;
+
+  const t  = Math.min(clock / PULL, 1);
+  const te = easeOutExpo(t);
+  const tc = easeInOutCubic(t);
+
+  if (t < 1) {
+    camera.position.lerpVectors(START_POS, END_POS, te);
+    camera.position.x += Math.sin(t * Math.PI) * 0.6 * (1-t);
+    camera.position.y += Math.sin(t * Math.PI * 0.5) * 0.3;
+    camera.lookAt(new THREE.Vector3((1-tc)*START_POS.x*0.3, (1-tc)*START_POS.y*0.3, 0));
+    camera.fov = 55 - (1-te) * 22;
+    camera.updateProjectionMatrix();
+  } else {
+    const ot = (clock - PULL) * 0.04;
+    camera.position.set(Math.sin(ot)*7.5, END_POS.y + Math.sin(ot*0.5)*0.6, Math.cos(ot)*7.5);
+    camera.lookAt(0, 0.2, 0);
+    camera.fov = 55;
+    camera.updateProjectionMatrix();
+  }
+
+  meshes.forEach(m => {
+    const ph = m.userData.phase;
+    const b  = m.userData.baseRot;
+    m.rotation.x = b[0] + Math.sin(clock*0.4+ph)*0.004;
+    m.rotation.y = b[1] + Math.sin(clock*0.32+ph*1.2)*0.005;
+    m.rotation.z = b[2] + Math.cos(clock*0.36+ph*0.9)*0.003;
+  });
+
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+
+window.onresize = () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+};
+</script>
+</body>
+</html>
