@@ -51,7 +51,7 @@ scene.add(topLight);
 // Load single painting
 const loader = new THREE.TextureLoader();
 let paintingTex = null;
-loader.load('image1.png', tex => {
+loader.load('Image1.png', tex => {
   paintingTex = tex;
   meshes.forEach(m => {
     m.material.map = tex;
